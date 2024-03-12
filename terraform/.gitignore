@@ -1,0 +1,7 @@
+.terraform
+.terraform.lock.hcl
+*/*-lambda.zip
+local.tfvars
+tf.bat
+*.tfstate
+*.tfstate.*
