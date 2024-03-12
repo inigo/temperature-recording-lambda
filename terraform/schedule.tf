@@ -4,8 +4,8 @@ resource "aws_cloudwatch_event_rule" "hourly_lambda_trigger" {
   description         = "Trigger temperature storage lambda function every hour"
   schedule_expression = "cron(15 * ? * * *)" # Runs every hour at 15 minutes past
 
-  // @todo Temporarily disable this until the code is correct
-  state = "DISABLED"
+  // This is how to disable the timer when testing
+  state = "ENABLED"
 }
 
 # EventBridge Target to invoke Lambda function

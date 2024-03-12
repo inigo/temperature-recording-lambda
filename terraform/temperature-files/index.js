@@ -1,45 +1,73 @@
 const AWS = require('aws-sdk');
 const dynamodb = new AWS.DynamoDB.DocumentClient();
+const http = require('http');
 
 exports.handler = async (event) => {
-    // Parse the input data from the event
-    // const data = JSON.parse(event.body);
-
     const apiKey = process.env.API_KEY;
-    const endpoint = "http://datapoint.metoffice.gov.uk/public/data/val/wxfcs/all/xml/3840?res=3hourly&key="+apiKey
+    // Benson: 3658
+    // Brize Norton: 3649
+    const site = 3658;
 
-    console.log(`Received event: ${JSON.stringify(event, null, 2)}`);
+    // Generate the URL with the current time (last hour)
+    const currentDate = new Date();
+    const lastHour = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), currentDate.getHours());
+    const lastHourIsoString = lastHour.toISOString().replace(/\.\d+Z$/, 'Z');
+    const endpoint = `http://datapoint.metoffice.gov.uk/public/data/val/wxobs/all/json/${site}?res=hourly&key=${apiKey}&time=${lastHourIsoString}`;
+    console.info(`Making request to ${endpoint}`);
 
-    const data = {
-        type_site: "temp_benson",
-        datetime: "2024-03-12T13:00:00",
-        temperature: 20.8
-    }
+    // Function to make the HTTP GET request
+    const fetchData = (url) => {
+        return new Promise((resolve, reject) => {
+            http.get(url, (res) => {
+                let data = '';
 
-    // Define the DynamoDB item
-    const item = {
-        type_site: data.type_site,
-        datetime: data.datetime,
-        temperature: data.temperature
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+
+                res.on('end', () => {
+                    try {
+                        console.log("Response from ${endpoint} received - "+data);
+                        const parsedData = JSON.parse(data);
+                        resolve(parsedData);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            }).on('error', (err) => {
+                reject(err);
+            });
+        });
     };
 
-    // Write the item to DynamoDB
-    const params = {
-        TableName: 'TemperatureData',
-        Item: item
+    // Function to store data in DynamoDB
+    const storeDataInDynamoDB = (data) => {
+        const values = data.SiteRep.DV.Location.Period.Rep;
+
+        const itemToStore = {
+            type_site: "w_"+site, // These are the keys of the DynamoDB table
+            datetime: lastHourIsoString,
+            ...values
+        };
+
+        console.log("Storing data : "+JSON.stringify(itemToStore));
+
+        const params = {
+            TableName: 'TemperatureData',
+            Item: itemToStore
+        };
+
+        return dynamodb.put(params).promise();
     };
 
     try {
-        await dynamodb.put(params).promise();
-        return {
-            statusCode: 200,
-            body: JSON.stringify('Data written to DynamoDB successfully!')
-        };
-    } catch (err) {
-        console.error('Error writing to DynamoDB:', err);
-        return {
-            statusCode: 500,
-            body: JSON.stringify('Error writing to DynamoDB')
-        };
+        // Fetch data from the API
+        const data = await fetchData(endpoint);
+        // Store the fetched data in DynamoDB
+        await storeDataInDynamoDB(data);
+        return { statusCode: 200, body: JSON.stringify({ message: 'Data stored successfully' }) };
+    } catch (error) {
+        console.error('Error:', error);
+        return { statusCode: 500, body: JSON.stringify({ message: 'Failed to store data' }) };
     }
 };
