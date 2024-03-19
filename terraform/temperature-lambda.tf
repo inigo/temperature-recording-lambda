@@ -59,3 +59,30 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamo_write_policy_attachment
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.temperature_dynamo_write_policy.arn
 }
+
+# IAM Policy for CloudWatch Logs
+data "aws_iam_policy_document" "lambda_cloudwatch_logs_policy" {
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = [
+      "arn:aws:logs:*:*:*"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "lambda_cloudwatch_logs_policy" {
+  name        = "lambda-cloudwatch-logs-policy"
+  path        = "/"
+  policy      = data.aws_iam_policy_document.lambda_cloudwatch_logs_policy.json
+  description = "Allow Lambda to write to CloudWatch Logs"
+}
+
+# Attach CloudWatch Logs Policy to Lambda Execution Role
+resource "aws_iam_role_policy_attachment" "lambda_cloudwatch_logs_policy_attachment" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_cloudwatch_logs_policy.arn
+}
