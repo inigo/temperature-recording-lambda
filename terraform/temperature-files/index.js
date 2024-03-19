@@ -1,8 +1,9 @@
-const AWS = require('aws-sdk');
-const dynamodb = new AWS.DynamoDB.DocumentClient();
+const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
 const http = require('http');
 
-exports.handler = async (event) => {
+const dynamodb = new DynamoDBClient();
+
+exports.handler = async () => {
     const apiKey = process.env.API_KEY;
     // Benson: 3658
     // Brize Norton: 3649
@@ -15,49 +16,65 @@ exports.handler = async (event) => {
     const endpoint = `http://datapoint.metoffice.gov.uk/public/data/val/wxobs/all/json/${site}?res=hourly&key=${apiKey}&time=${lastHourIsoString}`;
     console.info(`Making request to ${endpoint}`);
 
-    // Function to make the HTTP GET request
     const fetchData = (url) => {
         return new Promise((resolve, reject) => {
-            http.get(url, (res) => {
+            http.get(url, (response) => {
                 let data = '';
 
-                res.on('data', (chunk) => {
+                response.on('data', (chunk) => {
                     data += chunk;
                 });
 
-                res.on('end', () => {
+                response.on('end', () => {
                     try {
-                        console.log("Response from ${endpoint} received - "+data);
                         const parsedData = JSON.parse(data);
+                        console.log(`Response from ${endpoint} received - ${JSON.stringify(parsedData)}`);
                         resolve(parsedData);
-                    } catch (e) {
-                        reject(e);
+                    } catch (error) {
+                        reject(new Error(`Error parsing response: ${error.message}`));
                     }
                 });
-            }).on('error', (err) => {
-                reject(err);
+            }).on('error', (error) => {
+                reject(new Error(`Error making request: ${error.message}`));
             });
         });
     };
 
-    // Function to store data in DynamoDB
-    const storeDataInDynamoDB = (data) => {
-        const values = data.SiteRep.DV.Location.Period.Rep;
+    const storeDataInDynamoDB = async (data) => {
+        const rep = data.SiteRep.DV.Location.Period.Rep;
 
         const itemToStore = {
-            type_site: "w_"+site, // These are the keys of the DynamoDB table
-            datetime: lastHourIsoString,
-            ...values
+            type_site: { S: `w_${site}` }, // These are the keys of the DynamoDB table
+            datetime: { S: lastHourIsoString },
         };
 
-        console.log("Storing data : "+JSON.stringify(itemToStore));
+        if (typeof rep === 'object' && rep !== null) {
+            for (const [key, value] of Object.entries(rep)) {
+                if (key === 'D' || key === 'Pt') {
+                    itemToStore[key] = { S: value };
+                } else if (key === '$') {
+                    itemToStore[key] = { N: value };
+                } else {
+                    itemToStore[key] = { N: value };
+                }
+            }
+        } else {
+            throw new Error(`Unexpected data format:: ${rep}`);
+        }
+
+        console.log(`Storing data: ${JSON.stringify(itemToStore)}`);
 
         const params = {
             TableName: 'TemperatureData',
             Item: itemToStore
         };
 
-        return dynamodb.put(params).promise();
+        try {
+            const command = new PutItemCommand(params);
+            await dynamodb.send(command);
+        } catch (error) {
+            throw new Error(`Error storing data in DynamoDB: ${error.message}`);
+        }
     };
 
     try {
@@ -68,6 +85,6 @@ exports.handler = async (event) => {
         return { statusCode: 200, body: JSON.stringify({ message: 'Data stored successfully' }) };
     } catch (error) {
         console.error('Error:', error);
-        return { statusCode: 500, body: JSON.stringify({ message: 'Failed to store data' }) };
+        throw error;
     }
 };
