@@ -21,12 +21,13 @@ data "archive_file" "lambda_code" {
   output_path = "temperature-files/temperature-lambda.zip"
 }
 
-resource "aws_lambda_function" "write_to_dynamo" {
+resource "aws_lambda_function" "record_temperature" {
   filename         = data.archive_file.lambda_code.output_path
-  function_name    = "write-to-dynamo"
+  function_name    = "record-temperature"
   role             = aws_iam_role.lambda_execution_role.arn
   handler          = "index.handler"
   runtime          = "nodejs20.x"
+  publish = true
   environment {
     variables = {
       API_KEY = var.datapoint_api_key
