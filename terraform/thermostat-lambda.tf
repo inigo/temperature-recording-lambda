@@ -23,3 +23,26 @@ resource "aws_lambda_function" "record_thermostat" {
   }
   source_code_hash = data.archive_file.thermostat_lambda_code.output_base64sha256
 }
+
+
+resource "aws_ssm_parameter" "access_token" {
+  name        = "/thermostat/access-token"
+  description = "Access token for Thermostat API"
+  type        = "SecureString"
+  value       = var.access_token
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_ssm_parameter" "refresh_token" {
+  name        = "/thermostat/refresh-token"
+  description = "Refresh token for Thermostat API"
+  type        = "SecureString"
+  value       = var.refresh_token
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

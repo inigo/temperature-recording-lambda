@@ -65,3 +65,37 @@ resource "aws_iam_role_policy_attachment" "lambda_cloudwatch_logs_policy_attachm
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.lambda_cloudwatch_logs_policy.arn
 }
+
+resource "aws_iam_policy" "lambda_ssm_policy" {
+  name        = "lambda-ssm-policy"
+  path        = "/"
+  description = "IAM policy for Lambda to access SSM parameters"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Effect   = "Allow"
+        Resource = [
+          "arn:aws:ssm:*:*:parameter/thermostat/access-token",
+          "arn:aws:ssm:*:*:parameter/thermostat/refresh-token"
+        ]
+      },
+      {
+        Action   = "ssm:PutParameter"
+        Effect   = "Allow"
+        Resource = "arn:aws:ssm:*:*:parameter/thermostat/access-token"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_ssm_policy_attachment" {
+  policy_arn = aws_iam_policy.lambda_ssm_policy.arn
+  role       = aws_iam_role.lambda_execution_role.name
+}

@@ -1,8 +1,9 @@
 const https = require('https');
 const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+const { SSMClient, GetParameterCommand, PutParameterCommand } = require('@aws-sdk/client-ssm');
 
 const dynamodb = new DynamoDBClient();
-
+const ssm = new SSMClient();
 
 const refreshAccessToken = async (refreshToken, clientId, clientSecret) => {
     const options = {
@@ -87,6 +88,15 @@ const retrieveThermostatWithRetry = async (accessToken, refreshToken, clientId, 
     if (initialResponse.statusCode === 401) {
         console.log("Access token expired, try to refresh it");
         const newAccessToken = await refreshAccessToken(refreshToken, clientId, clientSecret);
+
+        const putParameterCommand = new PutParameterCommand({
+            Name: '/thermostat/access-token',
+            Value: newAccessToken,
+            Type: 'SecureString',
+            Overwrite: true,
+        });
+        await ssm.send(putParameterCommand);
+
         return await retrieveThermostatInfo(newAccessToken, devicePath);
     } else {
         console.log(`First attempt was authorized - status code ${initialResponse.statusCode}`);
@@ -123,9 +133,30 @@ const storeDataInDynamoDB = async (thermostatData) => {
 };
 
 exports.handler = async (event) => {
+    let accessToken = process.env.ACCESS_TOKEN;
+    let refreshToken = process.env.REFRESH_TOKEN;
 
-    const accessToken = process.env.ACCESS_TOKEN;
-    const refreshToken = process.env.REFRESH_TOKEN;
+    try {
+        const getAccessTokenCommand = new GetParameterCommand({
+            Name: '/thermostat/access-token',
+            WithDecryption: true,
+        });
+        const getRefreshTokenCommand = new GetParameterCommand({
+            Name: '/thermostat/refresh-token',
+            WithDecryption: true,
+        });
+
+        const [accessTokenResponse, refreshTokenResponse] = await Promise.all([
+            ssm.send(getAccessTokenCommand),
+            ssm.send(getRefreshTokenCommand),
+        ]);
+
+        accessToken = accessTokenResponse.Parameter.Value;
+        refreshToken = refreshTokenResponse.Parameter.Value;
+    } catch (error) {
+        console.log("Could not retrieve configuration - using defaults: "+error)
+    }
+
     const devicePath = process.env.DEVICE_PATH;
     const clientSecret = process.env.CLIENT_SECRET;
     const clientId = process.env.CLIENT_ID;
